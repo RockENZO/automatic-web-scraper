@@ -1,41 +1,152 @@
 import selenium.webdriver as webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 from bs4 import BeautifulSoup
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-def scrape_website(website):
-    print("Launching browser...🚀")
-    chrome_driver_path = "./chromedriver"
-    driver = webdriver.Chrome(service=Service(chrome_driver_path))
+def scrape_website(website, wait_time=5, headless=True):
+    """
+    Scrape a website and return its HTML content.
+    
+    Args:
+        website (str): URL to scrape
+        wait_time (int): Time to wait for page loading
+        headless (bool): Run browser in headless mode
+        
+    Returns:
+        str: HTML content of the website
+    """
+    logger.info(f"Starting to scrape: {website}")
+    
+    # Configure Chrome options
+    chrome_options = Options()
+    if headless:
+        chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+    
+    # Use ChromeDriverManager to automatically download and manage the correct ChromeDriver
+    try:
+        service = Service(ChromeDriverManager().install())
+        logger.info("Using ChromeDriverManager for automatic driver management")
+    except Exception as e:
+        # Fallback to local chromedriver if webdriver-manager fails
+        logger.warning(f"ChromeDriverManager failed: {e}. Falling back to local chromedriver")
+        chrome_driver_path = "./chromedriver"
+        service = Service(chrome_driver_path)
+    
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    
     try:
         driver.get(website)
-        print("Page loaded successfully!🎉")
+        logger.info("Page loaded, waiting for content...")
+        
+        # Wait for body element to be present
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+        
+        # Additional wait for dynamic content
+        time.sleep(wait_time)
+        
         html = driver.page_source
-        time.sleep(10)
+        logger.info(f"Successfully scraped {len(html)} characters")
         return html
+        
+    except Exception as e:
+        logger.error(f"Error scraping website: {str(e)}")
+        raise
     finally:
         driver.quit()
+        logger.info("Browser closed")
 
 def extract_body_content(html_content):
-    soup = BeautifulSoup(html_content, "html.parser")
-    body_content = soup.body
-    if body_content:
-        return str(body_content)
-    return "No content found on the page"
+    """
+    Extract body content from HTML.
+    
+    Args:
+        html_content (str): Raw HTML content
+        
+    Returns:
+        str: Body content as string
+    """
+    try:
+        soup = BeautifulSoup(html_content, "html.parser")
+        body_content = soup.body
+        if body_content:
+            return str(body_content)
+        return "No body content found on the page"
+    except Exception as e:
+        logger.error(f"Error extracting body content: {str(e)}")
+        return "Error extracting body content"
+
 
 def clean_body_content(body_content):
-    soup = BeautifulSoup(body_content, "html.parser")
-    for script_or_style in soup(["script", "style"]):
-        script_or_style.extract()
-    cleaned_content = soup.get_text(separator="\n")
-    clean_content = "\n".join(
-        line.strip() for line in cleaned_content.splitlines() if line.strip()
-    )
-    return clean_content
+    """
+    Clean body content by removing scripts, styles, and formatting text.
+    
+    Args:
+        body_content (str): Raw body content
+        
+    Returns:
+        str: Cleaned and formatted text content
+    """
+    try:
+        soup = BeautifulSoup(body_content, "html.parser")
+        
+        # Remove unwanted elements
+        for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            element.extract()
+        
+        # Remove comments
+        for comment in soup.findAll(text=lambda text: isinstance(text, BeautifulSoup.Comment)):
+            comment.extract()
+        
+        # Get text with proper spacing
+        cleaned_content = soup.get_text(separator="\n")
+        
+        # Clean up whitespace and empty lines
+        lines = [line.strip() for line in cleaned_content.splitlines()]
+        clean_lines = [line for line in lines if line and len(line) > 2]
+        
+        return "\n".join(clean_lines)
+    except Exception as e:
+        logger.error(f"Error cleaning body content: {str(e)}")
+        return body_content  # Return original content if cleaning fails
 
-def split_dom_content(dom_content,max_length=6000):
-    return [
-        dom_content[i: i + max_length] for i in range(0,len(dom_content), max_length)
-    ]
+
+def split_dom_content(dom_content, max_length=6000):
+    """
+    Split DOM content into manageable chunks for processing.
+    
+    Args:
+        dom_content (str): Content to split
+        max_length (int): Maximum length of each chunk
+        
+    Returns:
+        list: List of content chunks
+    """
+    if len(dom_content) <= max_length:
+        return [dom_content]
+    
+    chunks = []
+    for i in range(0, len(dom_content), max_length):
+        chunk = dom_content[i:i + max_length]
+        chunks.append(chunk)
+    
+    logger.info(f"Split content into {len(chunks)} chunks")
+    return chunks
 
