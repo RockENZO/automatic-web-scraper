@@ -8,13 +8,18 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 from bs4 import BeautifulSoup
 import logging
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Constants
+DEFAULT_WAIT_TIME = 5
+MAX_RETRY_ATTEMPTS = 3
 
-def scrape_website(website, wait_time=5, headless=True):
+
+def scrape_website(website: str, wait_time: int = DEFAULT_WAIT_TIME, headless: bool = True) -> str:
     """
     Scrape a website and return its HTML content.
     
@@ -25,8 +30,16 @@ def scrape_website(website, wait_time=5, headless=True):
         
     Returns:
         str: HTML content of the website
+        
+    Raises:
+        Exception: If scraping fails after all retry attempts
     """
     logger.info(f"Starting to scrape: {website}")
+    
+    # Validate URL
+    from utils import validate_url
+    if not validate_url(website):
+        raise ValueError(f"Invalid URL provided: {website}")
     
     # Configure Chrome options
     chrome_options = Options()
